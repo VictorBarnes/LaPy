@@ -43,6 +43,8 @@ class Solver:
         speed. Requires the ``scikit-sparse`` library. If it can not be found, an error
         will be thrown.
         If False, will use slower LU decomposition.
+    verbose : bool, default: False
+        If True, print additional information.
 
     Notes
     -----
@@ -58,6 +60,7 @@ class Solver:
         aniso_smooth: int = 10,
         hetero: Optional[List[Union[float]]] = None,
         use_cholmod: bool = False,
+        verbose: bool = False,
     ) -> None:
         if use_cholmod:
             self.sksparse = import_optional_dependency("sksparse", raise_error=True)
@@ -74,7 +77,8 @@ class Solver:
         if type(geometry).__name__ == "TriaMesh":
             if aniso is not None:
                 # anisotropic Laplace
-                print("TriaMesh with anisotropic Laplace-Beltrami")
+                if verbose:
+                    print("TriaMesh with anisotropic Laplace-Beltrami")
                 u1, u2, c1, c2 = geometry.curvature_tria(smoothit=aniso_smooth)
                 # Diag mat to specify anisotropy strength
                 if isinstance(aniso, (list, tuple, set, np.ndarray)):
@@ -96,10 +100,12 @@ class Solver:
                     aniso_mat[:, 1] *= hetero
                 a, b = self._fem_tria_aniso(geometry, u1, u2, aniso_mat, lump)
             else:
-                print("TriaMesh with regular Laplace-Beltrami")
+                if verbose:
+                    print("TriaMesh with regular Laplace-Beltrami")
                 a, b = self._fem_tria(geometry, lump)
         elif type(geometry).__name__ == "TetMesh":
-            print("TetMesh with regular Laplace")
+            if verbose:
+                print("TetMesh with regular Laplace")
             a, b = self._fem_tetra(geometry, lump)
         else:
             raise ValueError('Geometry type "' + type(geometry).__name__ + '" unknown')
@@ -630,7 +636,7 @@ class Solver:
         b = sparse.csc_matrix((local_b, (i, j)))
         return a, b
 
-    def eigs(self, k: int = 10):
+    def eigs(self, k: int = 10, verbose=False):
         """Compute the linear finite-element method Laplace-Beltrami spectrum.
 
         Parameters
@@ -638,6 +644,8 @@ class Solver:
         k : int
             The number of eigenvalues and eigenvectors desired. ``k`` must be smaller
             than ``N``. It is not possible to compute all eigenvectors of a matrix.
+        verbose : bool
+            If True, print solver information.
 
         Returns
         -------
@@ -652,7 +660,8 @@ class Solver:
 
         sigma = -0.01
         if self.use_cholmod:
-            print("Solver: Cholesky decomposition from scikit-sparse cholmod ...")
+            if verbose:
+                print("Solver: Cholesky decomposition from scikit-sparse cholmod ...")
             chol = self.sksparse.cholmod.cholesky(self.stiffness - sigma * self.mass)
             op_inv = LinearOperator(
                 matvec=chol,
@@ -662,7 +671,8 @@ class Solver:
         else:
             from scipy.sparse.linalg import splu
 
-            print("Solver: spsolve (LU decomposition) ...")
+            if verbose:
+                print("Solver: spsolve (LU decomposition) ...")
             # turns out it is much faster to use cholesky and pass operator
             lu = splu(self.stiffness - sigma * self.mass)
             op_inv = LinearOperator(
@@ -675,7 +685,7 @@ class Solver:
         )
         return eigenvalues, eigenvectors
 
-    def poisson(self, h=0.0, dtup=(), ntup=()):  # poissonSolver
+    def poisson(self, h=0.0, dtup=(), ntup=(), verbose=False):  # poissonSolver
         """Solver for the poisson equation with boundary conditions.
 
         This solver is based on the ``A`` and ``B`` Laplace matrices where ``A x = B h``
@@ -780,13 +790,15 @@ class Solver:
         # solve A x = b
         print("Matrix Format now: " + a.getformat())
         if self.use_cholmod:
-            print("Solver: Cholesky decomposition from scikit-sparse cholmod ...")
+            if verbose:
+                print("Solver: Cholesky decomposition from scikit-sparse cholmod ...")
             chol = self.sksparse.cholmod.cholesky(a)
             x = chol(b)
         else:
             from scipy.sparse.linalg import splu
 
-            print("Solver: spsolve (LU decomposition) ...")
+            if verbose:
+                print("Solver: spsolve (LU decomposition) ...")
             lu = splu(a)
             x = lu.solve(b.astype(np.float32))
         x = np.squeeze(np.array(x))
