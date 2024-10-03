@@ -1,6 +1,6 @@
 import importlib
 import sys
-from typing import Optional, Union
+from typing import Optional, Union, List
 
 import numpy as np
 from scipy import sparse
@@ -34,6 +34,10 @@ class Solver:
         close to 0, i.e. a concave cylinder).
     aniso_smooth : int | None
         Number of smoothing iterations for curvature computation on vertices.
+    hetero : array_like | None
+        Surface heterogeneity value for each triangle (N,) of the surface. This is used for solving 
+        the heterogeneous Lapalace-Beltrami Operator. If hetero is specified and aniso is not then 
+        isotropic diffusion is assumed, i.e. aniso=(0, 0).
     use_cholmod : bool, default: False
         If True, attempts to use the Cholesky decomposition for improved execution
         speed. Requires the ``scikit-sparse`` library. If it can not be found, an error
@@ -52,6 +56,7 @@ class Solver:
         lump: bool = False,
         aniso: Optional[Union[float, tuple[float, float]]] = None,
         aniso_smooth: int = 10,
+        hetero: Optional[List[Union[float]]] = None,
         use_cholmod: bool = False,
     ) -> None:
         if use_cholmod:
@@ -59,6 +64,13 @@ class Solver:
             importlib.import_module(".cholmod", self.sksparse.__name__)
         else:
             self.sksparse = None
+        if hetero is not None:
+            # If hetero is specified but aniso isn't then assume isotropic diffusion
+            if aniso is None:
+                aniso = (0, 0)
+            if len(hetero) != geometry.t.shape[0]:
+                raise ValueError(f"Wrong hetero length: {len(hetero)}. Should be: "
+                                 f"{geometry.t.shape[0]}")
         if type(geometry).__name__ == "TriaMesh":
             if aniso is not None:
                 # anisotropic Laplace
@@ -78,6 +90,10 @@ class Solver:
                 aniso_mat = np.empty((geometry.t.shape[0], 2))
                 aniso_mat[:, 1] = np.exp(-aniso1 * np.abs(c1))
                 aniso_mat[:, 0] = np.exp(-aniso0 * np.abs(c2))
+                # Apply heterogeneity if specified
+                if hetero is not None:
+                    aniso_mat[:, 0] *= hetero
+                    aniso_mat[:, 1] *= hetero
                 a, b = self._fem_tria_aniso(geometry, u1, u2, aniso_mat, lump)
             else:
                 print("TriaMesh with regular Laplace-Beltrami")
